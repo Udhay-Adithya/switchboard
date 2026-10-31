@@ -1,9 +1,7 @@
 #!/bin/bash
 #
 # Builds, signs, notarizes and packages switchboard's macOS build, then
-# tags the version and publishes it to a GitHub release. Pushing the tag
-# also kicks off the Linux and Windows builds in
-# .github/workflows/release.yml, which upload to the same release.
+# tags the version and publishes it to a GitHub release.
 #
 # One-time setup:
 #   1. Create a "Developer ID Application" certificate (NOT "Apple
@@ -213,7 +211,7 @@ say "Tagging $TAG"
 git tag -a "$TAG" -m "$TAG"
 git push origin "$TAG"
 
-say "Publishing to GitHub (this also starts the linux and windows builds)"
+say "Publishing to GitHub"
 if gh release view "$TAG" >/dev/null 2>&1; then
   gh release upload "$TAG" "$DMG" --clobber
 else

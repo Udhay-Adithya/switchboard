@@ -12,9 +12,9 @@ Nothing leaves your machine. It only reads and writes the local Claude Desktop s
 
 ## Install
 
-Download the latest build for your platform from [Releases](https://github.com/Udhay-Adithya/switchboard/releases). The macOS build is signed and notarized, so it opens normally.
+Download the signed, notarized macOS build from [Releases](https://github.com/Udhay-Adithya/switchboard/releases).
 
-Or build it yourself:
+On Linux or Windows, build it yourself:
 
 ```bash
 git clone https://github.com/Udhay-Adithya/switchboard.git
