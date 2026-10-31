@@ -12,13 +12,7 @@ Nothing leaves your machine. It only reads and writes the local Claude Desktop s
 
 ## Install
 
-Download the latest build for your platform from [Releases](https://github.com/Udhay-Adithya/switchboard/releases).
-
-On macOS, the app isn't notarized yet (see [Notarization](#notarization) below), so the first launch needs:
-
-```bash
-xattr -d com.apple.quarantine /Applications/switchboard.app
-```
+Download the latest build for your platform from [Releases](https://github.com/Udhay-Adithya/switchboard/releases). The macOS build is signed and notarized, so it opens normally.
 
 Or build it yourself:
 
@@ -41,10 +35,6 @@ cargo run --release -- --demo
 ## How it works
 
 Claude Desktop stores a small per-account, per-organization index of chat sessions under `~/Library/Application Support/Claude/claude-code-sessions/`. switchboard scans every account it finds there, cross-references `~/Library/Logs/Claude/main.log` to work out which organization folder is actually signed in for each account, and copies the relevant session pointer file when you drop a chat on another account. It never touches the underlying transcript files, which are shared storage independent of any account.
-
-## Notarization
-
-Apple notarization needs a paid Developer ID certificate that isn't available for this project yet. Builds are ad hoc signed, which is why Gatekeeper needs the `xattr` step above on first run. If that changes, the release workflow will pick it up automatically.
 
 ## License
 
