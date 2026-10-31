@@ -1,0 +1,137 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+
+      - name: bundle app
+        run: |
+          set -eu
+          VERSION="${GITHUB_REF_NAME#v}"
+          APP="switchboard.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/release/switchboard "$APP/Contents/MacOS/switchboard"
+          cat > "$APP/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>switchboard</string>
+            <key>CFBundleDisplayName</key><string>switchboard</string>
+            <key>CFBundleIdentifier</key><string>dev.udhayadithya.switchboard</string>
+            <key>CFBundleVersion</key><string>$VERSION</string>
+            <key>CFBundleShortVersionString</key><string>$VERSION</string>
+            <key>CFBundleExecutable</key><string>switchboard</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: sign
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -eu
+          if [ -n "${APPLE_CERTIFICATE_P12:-}" ]; then
+            KEYCHAIN="build.keychain"
+            security create-keychain -p actions "$KEYCHAIN"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN"
+            security unlock-keychain -p actions "$KEYCHAIN"
+            echo "$APPLE_CERTIFICATE_P12" | base64 --decode > cert.p12
+            security import cert.p12 -k "$KEYCHAIN" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$KEYCHAIN"
+            security list-keychains -d user -s "$KEYCHAIN" login.keychain
+            codesign --force --deep --options runtime --sign "$APPLE_SIGNING_IDENTITY" switchboard.app
+            rm -f cert.p12
+          else
+            codesign --force --deep --sign - switchboard.app
+          fi
+
+      - name: notarize
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_KEY_ISSUER: ${{ secrets.APPLE_NOTARY_KEY_ISSUER }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+        run: |
+          set -eu
+          if [ -n "${APPLE_CERTIFICATE_P12:-}" ] && [ -n "${APPLE_NOTARY_KEY_P8:-}" ]; then
+            echo "$APPLE_NOTARY_KEY_P8" | base64 --decode > notary_key.p8
+            ditto -c -k --keepParent switchboard.app switchboard.zip
+            xcrun notarytool submit switchboard.zip \
+              --key notary_key.p8 \
+              --key-id "$APPLE_NOTARY_KEY_ID" \
+              --issuer "$APPLE_NOTARY_KEY_ISSUER" \
+              --wait
+            xcrun stapler staple switchboard.app
+            rm -f notary_key.p8 switchboard.zip
+          else
+            echo "no notarization credentials, shipping an ad hoc signed build"
+          fi
+
+      - name: create dmg
+        run: |
+          set -eu
+          mkdir dmg-root
+          cp -R switchboard.app dmg-root/
+          ln -s /Applications dmg-root/Applications
+          hdiutil create -volname switchboard -srcfolder dmg-root -ov -format UDZO switchboard-macos.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: switchboard-macos
+          path: switchboard-macos.dmg
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev
+      - run: cargo build --release
+      - run: |
+          mkdir switchboard-linux
+          cp target/release/switchboard switchboard-linux/
+          tar -czf switchboard-linux.tar.gz switchboard-linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: switchboard-linux
+          path: switchboard-linux.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+      - run: Compress-Archive -Path target/release/switchboard.exe -DestinationPath switchboard-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: switchboard-windows
+          path: switchboard-windows.zip
+
+  publish:
+    needs: [macos, linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
